@@ -1,0 +1,3 @@
+- [x] Establish monochrome editorial design system and isolated presentation records.
+- [ ] Build shared navigation, record components, and all requested pages.
+- [ ] Verify routes, interactions, desktop/mobile layouts, and diagnostics.
