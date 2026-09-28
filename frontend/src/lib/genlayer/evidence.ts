@@ -7,66 +7,123 @@ export type PreparedEvidence = {
   size: number;
 };
 
+type EvidenceErrorCode =
+  | "INVALID_REQUEST"
+  | "INVALID_URL"
+  | "UNSUPPORTED_PROTOCOL"
+  | "BLOCKED_HOST"
+  | "PRIVATE_ADDRESS"
+  | "DNS_FAILED"
+  | "EVIDENCE_TIMEOUT"
+  | "EVIDENCE_UNREACHABLE"
+  | "EVIDENCE_REDIRECT"
+  | "EVIDENCE_HTTP_ERROR"
+  | "EVIDENCE_TOO_LARGE"
+  | "EVIDENCE_EMPTY"
+  | "INVALID_CONTENT"
+  | "EVIDENCE_INTERNAL";
+
 export function validateEvidenceUrl(rawUrl: string): string {
   const url = rawUrl.trim();
-  if (!url.startsWith("https://")) {
-    throw new Error("Evidence URL must use HTTPS.");
+  if (url.length === 0 || url.length > MAX_EVIDENCE_URL_LENGTH) {
+    throw new Error("Enter a valid public HTTPS evidence URL.");
   }
-  if (url.length > MAX_EVIDENCE_URL_LENGTH || /[\s\\#]/.test(url) || url.includes("@")) {
-    throw new Error("Evidence URL is not valid GAVEL HTTPS URL syntax.");
+  if (/\s|\\|#/.test(url) || url.includes("@")) {
+    throw new Error("Enter a valid public HTTPS evidence URL.");
   }
 
   let parsed: URL;
   try {
     parsed = new URL(url);
   } catch {
-    throw new Error("Evidence URL is not valid GAVEL HTTPS URL syntax.");
+    throw new Error("Enter a valid public HTTPS evidence URL.");
   }
   if (parsed.protocol !== "https:" || parsed.username || parsed.password || !parsed.hostname) {
-    throw new Error("Evidence URL is not valid GAVEL HTTPS URL syntax.");
+    throw new Error("Enter a valid public HTTPS evidence URL.");
   }
   return url;
-}
-
-function toLowerHex(bytes: Uint8Array): string {
-  return Array.from(bytes, (byte) => byte.toString(16).padStart(2, "0")).join("");
 }
 
 export async function prepareEvidence(rawUrl: string): Promise<PreparedEvidence> {
   const url = validateEvidenceUrl(rawUrl);
   let response: Response;
   try {
-    response = await fetch(url, {
-      cache: "no-store",
-      credentials: "omit",
+    response = await fetch("/api/prepare-evidence", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      credentials: "same-origin",
+      body: JSON.stringify({ url }),
     });
   } catch {
-    throw new Error(
-      "Unable to prepare this evidence URL from the browser. Use a direct HTTPS URL that permits browser access.",
-    );
+    throw new Error("GAVEL evidence preparation is unavailable right now. Try again.");
+  }
+
+  let payload: unknown;
+  try {
+    payload = await response.json();
+  } catch {
+    throw new Error("GAVEL evidence preparation returned an invalid response.");
   }
 
   if (!response.ok) {
-    throw new Error(`Evidence URL returned HTTP ${response.status}.`);
+    throw new Error(preparationErrorMessage(payload));
   }
+  if (!isPreparedEvidence(payload)) {
+    throw new Error("GAVEL evidence preparation returned incomplete data.");
+  }
+  return payload;
+}
 
-  let bytes: ArrayBuffer;
-  try {
-    bytes = await response.arrayBuffer();
-  } catch {
-    throw new Error(
-      "Unable to read this evidence response in the browser. Use a direct HTTPS URL that permits browser access.",
-    );
-  }
+function isPreparedEvidence(value: unknown): value is PreparedEvidence {
+  return (
+    typeof value === "object" &&
+    value !== null &&
+    "url" in value &&
+    typeof value.url === "string" &&
+    value.url.startsWith("https://") &&
+    "sha256" in value &&
+    typeof value.sha256 === "string" &&
+    /^[a-f0-9]{64}$/.test(value.sha256) &&
+    "size" in value &&
+    typeof value.size === "number" &&
+    Number.isInteger(value.size) &&
+    value.size > 0 &&
+    value.size <= MAX_EVIDENCE_BYTES
+  );
+}
 
-  if (bytes.byteLength === 0) {
-    throw new Error("Evidence response is empty.");
-  }
-  if (bytes.byteLength > MAX_EVIDENCE_BYTES) {
-    throw new Error(`Evidence response exceeds the ${MAX_EVIDENCE_BYTES}-byte limit.`);
-  }
+function preparationErrorMessage(payload: unknown): string {
+  const code =
+    typeof payload === "object" &&
+    payload !== null &&
+    "code" in payload &&
+    typeof payload.code === "string"
+      ? (payload.code as EvidenceErrorCode)
+      : undefined;
 
-  const digest = await crypto.subtle.digest("SHA-256", bytes);
-  const sha256 = toLowerHex(new Uint8Array(digest));
-  return { url, sha256, size: bytes.byteLength };
+  switch (code) {
+    case "INVALID_REQUEST":
+    case "INVALID_URL":
+    case "UNSUPPORTED_PROTOCOL":
+      return "Enter a valid public HTTPS evidence URL.";
+    case "BLOCKED_HOST":
+    case "PRIVATE_ADDRESS":
+      return "This evidence URL cannot be fetched for security reasons.";
+    case "EVIDENCE_TOO_LARGE":
+      return "Evidence must be 2 KB or smaller.";
+    case "EVIDENCE_EMPTY":
+      return "The evidence URL returned an empty response.";
+    case "INVALID_CONTENT":
+      return "GAVEL could not prepare this evidence URL.";
+    case "EVIDENCE_TIMEOUT":
+      return "The evidence host took too long to respond.";
+    case "EVIDENCE_REDIRECT":
+      return "This evidence URL could not be followed safely.";
+    case "DNS_FAILED":
+    case "EVIDENCE_UNREACHABLE":
+    case "EVIDENCE_HTTP_ERROR":
+    case "EVIDENCE_INTERNAL":
+    default:
+      return "GAVEL could not fetch this evidence URL.";
+  }
 }

@@ -254,6 +254,7 @@ export function CaseOperations({ item }: { item: CourtCase }) {
   const [description, setDescription] = useState("");
   const [evidenceUrl, setEvidenceUrl] = useState("");
   const [preparedEvidence, setPreparedEvidence] = useState<PreparedEvidence | null>(null);
+  const [preparedForUrl, setPreparedForUrl] = useState("");
   const [preparingEvidence, setPreparingEvidence] = useState(false);
   const [evidenceError, setEvidenceError] = useState("");
   const maxEvidence = config.data?.max_evidence_per_side ?? 4;
@@ -344,14 +345,16 @@ export function CaseOperations({ item }: { item: CourtCase }) {
   };
 
   useEffect(() => {
-    if (preparedEvidence && preparedEvidence.url !== evidenceUrl.trim()) {
+    if (preparedEvidence && preparedForUrl !== evidenceUrl.trim()) {
       setPreparedEvidence(null);
+      setPreparedForUrl("");
     }
-  }, [evidenceUrl, preparedEvidence]);
+  }, [evidenceUrl, preparedEvidence, preparedForUrl]);
 
   const handleEvidenceUrlChange = (value: string) => {
     setEvidenceUrl(value);
     setPreparedEvidence(null);
+    setPreparedForUrl("");
     setEvidenceError("");
   };
 
@@ -359,9 +362,12 @@ export function CaseOperations({ item }: { item: CourtCase }) {
     setPreparingEvidence(true);
     setEvidenceError("");
     try {
-      setPreparedEvidence(await prepareEvidence(evidenceUrl));
+      const prepared = await prepareEvidence(evidenceUrl);
+      setPreparedEvidence(prepared);
+      setPreparedForUrl(evidenceUrl.trim());
     } catch (error) {
       setPreparedEvidence(null);
+      setPreparedForUrl("");
       setEvidenceError(error instanceof Error ? error.message : "Evidence preparation failed.");
     } finally {
       setPreparingEvidence(false);
@@ -496,6 +502,10 @@ export function CaseOperations({ item }: { item: CourtCase }) {
               placeholder="https://..."
             />
           </label>
+          <p className="form-footnote">
+            GAVEL prepares this commitment server-side; GenLayer independently verifies the URL and
+            hash when judgment runs.
+          </p>
           <p className="form-footnote">
             {evidenceCount} of {maxEvidence} submitted · DESCRIPTION {description.length}/
             {maxDescription} · RESPONSE MAX {maxFetchedBytes} BYTES · EVIDENCE DEADLINE:{" "}

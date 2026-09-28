@@ -19,6 +19,7 @@ import { Route as AgentIdRouteImport } from './routes/agent.$id'
 import { Route as AgreementIdRouteImport } from './routes/agreement.$id'
 import { Route as AgreementsIndexRouteImport } from './routes/agreements.index'
 import { Route as AgreementsNewRouteImport } from './routes/agreements.new'
+import { Route as ApiPrepareEvidenceRouteImport } from './routes/api.prepare-evidence'
 import { Route as CaseIdRouteImport } from './routes/case.$id'
 
 const IndexRoute = IndexRouteImport.update({
@@ -71,6 +72,11 @@ const AgreementsNewRoute = AgreementsNewRouteImport.update({
   path: '/new',
   getParentRoute: () => AgreementsRoute,
 } as any)
+const ApiPrepareEvidenceRoute = ApiPrepareEvidenceRouteImport.update({
+  id: '/api/prepare-evidence',
+  path: '/api/prepare-evidence',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const CaseIdRoute = CaseIdRouteImport.update({
   id: '/case/$id',
   path: '/case/$id',
@@ -87,6 +93,7 @@ export interface FileRoutesByFullPath {
   '/agent/$id': typeof AgentIdRoute
   '/agreement/$id': typeof AgreementIdRoute
   '/agreements/new': typeof AgreementsNewRoute
+  '/api/prepare-evidence': typeof ApiPrepareEvidenceRoute
   '/case/$id': typeof CaseIdRoute
   '/agreements/': typeof AgreementsIndexRoute
 }
@@ -99,6 +106,7 @@ export interface FileRoutesByTo {
   '/agent/$id': typeof AgentIdRoute
   '/agreement/$id': typeof AgreementIdRoute
   '/agreements/new': typeof AgreementsNewRoute
+  '/api/prepare-evidence': typeof ApiPrepareEvidenceRoute
   '/case/$id': typeof CaseIdRoute
   '/agreements': typeof AgreementsIndexRoute
 }
@@ -113,6 +121,7 @@ export interface FileRoutesById {
   '/agent/$id': typeof AgentIdRoute
   '/agreement/$id': typeof AgreementIdRoute
   '/agreements/new': typeof AgreementsNewRoute
+  '/api/prepare-evidence': typeof ApiPrepareEvidenceRoute
   '/case/$id': typeof CaseIdRoute
   '/agreements/': typeof AgreementsIndexRoute
 }
@@ -128,6 +137,7 @@ export interface FileRouteTypes {
     | '/agent/$id'
     | '/agreement/$id'
     | '/agreements/new'
+    | '/api/prepare-evidence'
     | '/case/$id'
     | '/agreements/'
   fileRoutesByTo: FileRoutesByTo
@@ -140,6 +150,7 @@ export interface FileRouteTypes {
     | '/agent/$id'
     | '/agreement/$id'
     | '/agreements/new'
+    | '/api/prepare-evidence'
     | '/case/$id'
     | '/agreements'
   id:
@@ -153,6 +164,7 @@ export interface FileRouteTypes {
     | '/agent/$id'
     | '/agreement/$id'
     | '/agreements/new'
+    | '/api/prepare-evidence'
     | '/case/$id'
     | '/agreements/'
   fileRoutesById: FileRoutesById
@@ -166,6 +178,7 @@ export interface RootRouteChildren {
   RegisterRoute: typeof RegisterRoute
   AgentIdRoute: typeof AgentIdRoute
   AgreementIdRoute: typeof AgreementIdRoute
+  ApiPrepareEvidenceRoute: typeof ApiPrepareEvidenceRoute
   CaseIdRoute: typeof CaseIdRoute
 }
 
@@ -241,6 +254,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AgreementsNewRouteImport
       parentRoute: typeof AgreementsRoute
     }
+    '/api/prepare-evidence': {
+      id: '/api/prepare-evidence'
+      path: '/api/prepare-evidence'
+      fullPath: '/api/prepare-evidence'
+      preLoaderRoute: typeof ApiPrepareEvidenceRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/case/$id': {
       id: '/case/$id'
       path: '/case/$id'
@@ -274,6 +294,7 @@ const rootRouteChildren: RootRouteChildren = {
   RegisterRoute: RegisterRoute,
   AgentIdRoute: AgentIdRoute,
   AgreementIdRoute: AgreementIdRoute,
+  ApiPrepareEvidenceRoute: ApiPrepareEvidenceRoute,
   CaseIdRoute: CaseIdRoute,
 }
 export const routeTree = rootRouteImport
