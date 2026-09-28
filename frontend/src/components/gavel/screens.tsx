@@ -449,6 +449,14 @@ export function CaseScreen({
 }) {
   const judged = item.status === "JUDGED" || item.status === "EXECUTED";
   const bothReady = item.plaintiffReady && item.defendantReady;
+  const settlementRecipient =
+    item.verdict === "Plaintiff Wins"
+      ? item.plaintiff
+      : item.verdict === "Defendant Wins"
+        ? item.defendant
+        : item.verdict === "Inconclusive"
+          ? `${formatAddress(item.clientAddress)} · original Client`
+          : "—";
   const [now, setNow] = useState(() => Date.now());
   useEffect(() => {
     if (judged) return;
@@ -598,6 +606,9 @@ export function CaseScreen({
                 <MetaCell label="VERDICT">{item.verdict || "—"}</MetaCell>
                 <MetaCell label="REASON">{item.reason || "—"}</MetaCell>
                 <MetaCell label="EXECUTION STATUS">{item.execution}</MetaCell>
+                <MetaCell label="SETTLEMENT RECIPIENT">
+                  {judged ? settlementRecipient : "—"}
+                </MetaCell>
                 <MetaCell label="SETTLEMENT POLICY">Full Escrow</MetaCell>
               </div>
               <div className="settlement-matrix">
