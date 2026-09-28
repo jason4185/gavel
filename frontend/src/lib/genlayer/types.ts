@@ -1,9 +1,9 @@
 export type GavelAgreementStatus =
-  "PENDING_ACCEPTANCE" | "ACTIVE" | "DISPUTED" | "COMPLETED" | "CANCELLED";
+  "PENDING_ACCEPTANCE" | "ACTIVE" | "DISPUTED" | "COMPLETED" | "CANCELLED" | "EXPIRED";
 
 export type GavelCaseStatus = "DEFENCE_OPEN" | "EVIDENCE_OPEN" | "JUDGED" | "EXECUTED";
 
-export type GavelEvidenceType = "DOCUMENT" | "MESSAGE" | "RECEIPT" | "LOG" | "STATEMENT" | "OTHER";
+export type GavelEvidenceType = "DOCUMENT" | "MESSAGE" | "RECEIPT" | "LOG" | "OTHER";
 
 export type GavelEvidenceSide = "PLAINTIFF" | "DEFENDANT";
 
@@ -15,11 +15,16 @@ export type GavelConfig = {
   escrow_asset: string;
   evidence_types: GavelEvidenceType[];
   evidence_window_seconds: number;
+  max_evidence_description: number;
   max_evidence_per_side: number;
+  max_evidence_url: number;
+  max_fetched_evidence_bytes: number;
+  max_total_verified_evidence_bytes: number;
   max_page_size: number;
   name: string;
   remedy_policy: string;
   response_window_seconds: number;
+  acceptance_window_seconds: number;
   verdicts: string[];
   version: string;
 };
@@ -43,6 +48,7 @@ export type GavelAgreementRaw = {
   creator: string;
   escrow: string;
   escrow_released: boolean;
+  accept_deadline: number;
   id: number;
   remedy_policy: string;
   status: GavelAgreementStatus;
@@ -104,12 +110,13 @@ export type GavelCaseSummaryRaw = Pick<
 
 export type GavelEvidenceRaw = {
   case_id: number;
-  content: string;
+  description: string;
+  evidence_sha256: string;
   evidence_type: GavelEvidenceType;
+  evidence_url: string;
   index: number;
   side: GavelEvidenceSide;
   submitted_at: number;
-  uri: string;
 };
 
 export type GavelAgentPage = {
@@ -144,8 +151,9 @@ export type Evidence = {
   type: string;
   side: "Plaintiff" | "Defendant";
   at: string;
-  body: string;
+  description: string;
   reference: string;
+  sha256: string;
 };
 
 export type CourtCase = {
@@ -167,6 +175,12 @@ export type CourtCase = {
   evidenceDeadline: string;
   responseDeadlineAt: number;
   evidenceDeadlineAt: number;
+  agreementTitle: string;
+  agreementTerms: string;
+  clientAddress: string;
+  providerAddress: string;
+  plaintiffAgreementRole: "Client" | "Provider" | "Unknown";
+  defendantAgreementRole: "Client" | "Provider" | "Unknown";
   claimBody: string;
   defence: string;
   hasDefence: boolean;
@@ -192,6 +206,8 @@ export type Agreement = {
   status: GavelAgreementStatus;
   accepted: boolean;
   caseId?: string;
+  acceptDeadline: string;
+  acceptDeadlineAt: number;
   date: string;
   terms: string;
   released: string;

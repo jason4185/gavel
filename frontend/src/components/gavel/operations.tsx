@@ -1,4 +1,4 @@
-import { useMemo, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { ActionPanel } from "./records";
 import { Button } from "@/components/ui/button";
 import { GavelTransactionModal } from "@/components/genlayer/transaction-panel";
@@ -10,27 +10,16 @@ import {
   acceptAgreement,
   cancelAgreement,
   completeAgreement,
+  expireAgreement,
   executeJudgment,
   fileCase,
   markReadyForJudgment,
   submitDefence,
   submitEvidence,
 } from "@/lib/genlayer/transactions";
+import { prepareEvidence, type PreparedEvidence } from "@/lib/genlayer/evidence";
 import type { TrackedStatus } from "@genlayer/transaction-kit";
-import type { Agreement, CourtCase } from "@/lib/genlayer/types";
-
-const CLAIM_TYPES = [
-  "NON_DELIVERY",
-  "LATE_DELIVERY",
-  "INCOMPLETE_DELIVERY",
-  "QUALITY_FAILURE",
-  "PAYMENT_DISPUTE",
-  "SLA_BREACH",
-  "TERMS_VIOLATION",
-  "OTHER_CONTRACT_BREACH",
-] as const;
-
-const EVIDENCE_TYPES = ["DOCUMENT", "MESSAGE", "RECEIPT", "LOG", "STATEMENT", "OTHER"] as const;
+import type { Agreement, CourtCase, GavelEvidenceType } from "@/lib/genlayer/types";
 
 const CLAIM_LABELS: Record<string, string> = {
   NON_DELIVERY: "Non-delivery",
@@ -48,7 +37,6 @@ const EVIDENCE_LABELS: Record<string, string> = {
   MESSAGE: "Message",
   RECEIPT: "Receipt",
   LOG: "Log",
-  STATEMENT: "Statement",
   OTHER: "Other",
 };
 
@@ -61,11 +49,13 @@ function OperationTextArea({
   value,
   onChange,
   placeholder,
+  maxLength,
 }: {
   label: string;
   value: string;
   onChange: (value: string) => void;
   placeholder: string;
+  maxLength?: number;
 }) {
   return (
     <label className="operation-field">
@@ -75,6 +65,7 @@ function OperationTextArea({
         onChange={(event) => onChange(event.target.value)}
         placeholder={placeholder}
         rows={4}
+        {...(maxLength === undefined ? {} : { maxLength })}
       />
     </label>
   );
@@ -114,14 +105,20 @@ function sameAddress(address: string | null, other: string) {
 export function AgreementOperations({ item }: { item: Agreement }) {
   const { address } = useWallet();
   const invalidate = useInvalidateGavel();
+  const config = useGavelConfig();
   const [selected, setSelected] = useState<string | null>(null);
   const [transactionOpen, setTransactionOpen] = useState(false);
-  const [claimType, setClaimType] = useState<string>(CLAIM_TYPES[0]);
+  const [claimType, setClaimType] = useState("");
   const [claim, setClaim] = useState("");
   const [formError, setFormError] = useState("");
+  const claimTypes = config.data?.claim_types ?? [];
+  const selectedClaimType = claimTypes.includes(claimType) ? claimType : (claimTypes[0] ?? "");
   const pending = item.status === "PENDING_ACCEPTANCE";
   const active = item.status === "ACTIVE";
-  const allowedAccept = pending && sameAddress(address, item.providerAddress);
+  const now = Math.floor(Date.now() / 1000);
+  const acceptanceOpen = now < item.acceptDeadlineAt;
+  const allowedAccept = pending && acceptanceOpen && sameAddress(address, item.providerAddress);
+  const allowedExpire = pending && !acceptanceOpen;
   const allowedCancel = pending && sameAddress(address, item.clientAddress);
   const allowedComplete = active && sameAddress(address, item.clientAddress);
   const allowedFile =
@@ -136,10 +133,11 @@ export function AgreementOperations({ item }: { item: Agreement }) {
 
   const tx = useMemo(() => {
     if (selected === "Accept Agreement") return acceptAgreement(Number(item.id));
+    if (selected === "Expire Agreement") return expireAgreement(Number(item.id));
     if (selected === "Cancel Agreement") return cancelAgreement(Number(item.id));
     if (selected === "Complete Agreement") return completeAgreement(Number(item.id));
-    return fileCase(Number(item.id), claimType, claim.trim());
-  }, [claim, claimType, item.id, selected]);
+    return fileCase(Number(item.id), selectedClaimType, claim.trim());
+  }, [claim, item.id, selected, selectedClaimType]);
 
   const closeTransaction = () => {
     setTransactionOpen(false);
@@ -161,7 +159,15 @@ export function AgreementOperations({ item }: { item: Agreement }) {
           {
             label: "Accept Agreement",
             state: item.accepted ? "complete" : allowedAccept ? "available" : "disabled",
-            note: "Only the recorded provider may accept a pending agreement.",
+            note: acceptanceOpen
+              ? "Only the recorded provider may accept before the acceptance deadline."
+              : "The acceptance deadline has passed.",
+          },
+          {
+            label: "Expire Agreement",
+            state:
+              item.status === "EXPIRED" ? "complete" : allowedExpire ? "available" : "disabled",
+            note: "Any connected wallet may expire a pending agreement after its deadline. Escrow returns to the original client.",
           },
           {
             label: "Cancel Agreement",
@@ -189,7 +195,7 @@ export function AgreementOperations({ item }: { item: Agreement }) {
             label="ISSUE TYPE"
             value={claimType}
             onChange={setClaimType}
-            options={CLAIM_TYPES}
+            options={claimTypes}
             labels={CLAIM_LABELS}
           />
           <OperationTextArea
@@ -201,7 +207,11 @@ export function AgreementOperations({ item }: { item: Agreement }) {
           <p className="form-footnote">
             GAVEL V1 uses full-escrow settlement according to the judgment.
           </p>
-          <Button type="button" disabled={!claim.trim()} onClick={() => setTransactionOpen(true)}>
+          <Button
+            type="button"
+            disabled={!claim.trim() || !selectedClaimType}
+            onClick={() => setTransactionOpen(true)}
+          >
             REVIEW DISPUTE
           </Button>
           {formError && <p className="field-error">{formError}</p>}
@@ -240,10 +250,19 @@ export function CaseOperations({ item }: { item: CourtCase }) {
   const [selected, setSelected] = useState<string | null>(null);
   const [transactionOpen, setTransactionOpen] = useState(false);
   const [defence, setDefence] = useState("");
-  const [evidenceType, setEvidenceType] = useState<string>(EVIDENCE_TYPES[0]);
-  const [content, setContent] = useState("");
-  const [uri, setUri] = useState("");
-  const maxEvidence = config.data?.max_evidence_per_side ?? 8;
+  const [evidenceType, setEvidenceType] = useState<GavelEvidenceType | "">("");
+  const [description, setDescription] = useState("");
+  const [evidenceUrl, setEvidenceUrl] = useState("");
+  const [preparedEvidence, setPreparedEvidence] = useState<PreparedEvidence | null>(null);
+  const [preparingEvidence, setPreparingEvidence] = useState(false);
+  const [evidenceError, setEvidenceError] = useState("");
+  const maxEvidence = config.data?.max_evidence_per_side ?? 4;
+  const maxDescription = config.data?.max_evidence_description ?? 400;
+  const maxFetchedBytes = config.data?.max_fetched_evidence_bytes ?? 2048;
+  const evidenceTypes = config.data?.evidence_types ?? [];
+  const selectedEvidenceType = evidenceTypes.includes(evidenceType as GavelEvidenceType)
+    ? (evidenceType as GavelEvidenceType)
+    : (evidenceTypes[0] ?? "");
   const agent = useAgentRecord(address ?? "");
   const registeredAgent = agent.record?.isRegistered === true;
   const now = Math.floor(Date.now() / 1000);
@@ -300,13 +319,19 @@ export function CaseOperations({ item }: { item: CourtCase }) {
 
   const tx = useMemo(() => {
     if (selected === "Submit Defence") return submitDefence(Number(item.id), defence.trim());
-    if (selected === "Submit Evidence") {
-      return submitEvidence(Number(item.id), evidenceType, content.trim(), uri.trim() || "");
+    if (selected === "Submit Evidence" && preparedEvidence) {
+      return submitEvidence(
+        Number(item.id),
+        selectedEvidenceType,
+        description.trim(),
+        preparedEvidence.url,
+        preparedEvidence.sha256,
+      );
     }
     if (selected === "Mark Ready") return markReadyForJudgment(Number(item.id));
     if (selected === "Request Judgment") return adjudicateCase(Number(item.id));
     return executeJudgment(Number(item.id));
-  }, [content, defence, evidenceType, item.id, selected, uri]);
+  }, [defence, description, item.id, preparedEvidence, selected, selectedEvidenceType]);
 
   const closeTransaction = () => {
     setTransactionOpen(false);
@@ -316,6 +341,31 @@ export function CaseOperations({ item }: { item: CourtCase }) {
   const selectAction = (action: string) => {
     setSelected(action);
     setTransactionOpen(!["Submit Defence", "Submit Evidence"].includes(action));
+  };
+
+  useEffect(() => {
+    if (preparedEvidence && preparedEvidence.url !== evidenceUrl.trim()) {
+      setPreparedEvidence(null);
+    }
+  }, [evidenceUrl, preparedEvidence]);
+
+  const handleEvidenceUrlChange = (value: string) => {
+    setEvidenceUrl(value);
+    setPreparedEvidence(null);
+    setEvidenceError("");
+  };
+
+  const prepareCurrentEvidence = async () => {
+    setPreparingEvidence(true);
+    setEvidenceError("");
+    try {
+      setPreparedEvidence(await prepareEvidence(evidenceUrl));
+    } catch (error) {
+      setPreparedEvidence(null);
+      setEvidenceError(error instanceof Error ? error.message : "Evidence preparation failed.");
+    } finally {
+      setPreparingEvidence(false);
+    }
   };
 
   const countdown = (deadline: number) => {
@@ -423,37 +473,69 @@ export function CaseOperations({ item }: { item: CourtCase }) {
         <OperationForm>
           <OperationSelect
             label="EVIDENCE TYPE"
-            value={evidenceType}
-            onChange={setEvidenceType}
-            options={EVIDENCE_TYPES}
+            value={selectedEvidenceType}
+            onChange={(value) => setEvidenceType(value as GavelEvidenceType)}
+            options={evidenceTypes}
             labels={EVIDENCE_LABELS}
           />
           <OperationTextArea
-            label="EVIDENCE DESCRIPTION / CONTENT"
-            value={content}
-            onChange={setContent}
-            placeholder="Material placed on the public record."
+            label="EVIDENCE DESCRIPTION"
+            value={description}
+            onChange={(value) => {
+              setDescription(value);
+              setEvidenceError("");
+            }}
+            placeholder="Explain what this URL is evidence of."
+            maxLength={maxDescription}
           />
           <label className="operation-field">
-            <span>REFERENCE URI (OPTIONAL)</span>
+            <span>EVIDENCE URL</span>
             <input
-              value={uri}
-              onChange={(event) => setUri(event.target.value)}
+              value={evidenceUrl}
+              onChange={(event) => handleEvidenceUrlChange(event.target.value)}
               placeholder="https://..."
             />
           </label>
           <p className="form-footnote">
-            {evidenceCount} of {maxEvidence} submitted · EVIDENCE DEADLINE: {item.evidenceDeadline}
+            {evidenceCount} of {maxEvidence} submitted · DESCRIPTION {description.length}/
+            {maxDescription} · RESPONSE MAX {maxFetchedBytes} BYTES · EVIDENCE DEADLINE:{" "}
+            {item.evidenceDeadline}
           </p>
-          <Button type="button" disabled={!content.trim()} onClick={() => setTransactionOpen(true)}>
-            REVIEW EVIDENCE
+          <Button
+            type="button"
+            disabled={!evidenceUrl.trim() || preparingEvidence}
+            onClick={() => void prepareCurrentEvidence()}
+          >
+            {preparingEvidence ? "PREPARING EVIDENCE" : "PREPARE EVIDENCE"}
           </Button>
-          {transactionOpen && content.trim() && (
+          {preparedEvidence && (
+            <div className="transaction-review-details">
+              <div>
+                <span>STATUS</span>
+                <strong>READY · {preparedEvidence.size} RAW BYTES</strong>
+              </div>
+              <div>
+                <span>SHA-256 COMMITMENT</span>
+                <code>{preparedEvidence.sha256}</code>
+              </div>
+            </div>
+          )}
+          {evidenceError && <p className="field-error">{evidenceError}</p>}
+          <Button
+            type="button"
+            disabled={
+              !preparedEvidence || !description.trim() || description.length > maxDescription
+            }
+            onClick={() => setTransactionOpen(true)}
+          >
+            REVIEW EVIDENCE COMMITMENT
+          </Button>
+          {transactionOpen && preparedEvidence && description.trim() && (
             <GavelTransactionModal
               open
               onClose={closeTransaction}
               title="Review evidence"
-              description="Confirm fees and sign to submit this evidence to the court record."
+              description="Confirm the prepared raw-byte SHA-256 commitment and sign to submit it to the court record."
               tx={tx}
               onDone={finish}
               successMessage="Evidence submitted successfully."

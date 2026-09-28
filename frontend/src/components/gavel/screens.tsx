@@ -380,7 +380,15 @@ export function AgreementsScreen() {
         }
       />
       <FilterTabs
-        values={["ALL", "PENDING_ACCEPTANCE", "ACTIVE", "DISPUTED", "COMPLETED", "CANCELLED"]}
+        values={[
+          "ALL",
+          "PENDING_ACCEPTANCE",
+          "ACTIVE",
+          "DISPUTED",
+          "COMPLETED",
+          "CANCELLED",
+          "EXPIRED",
+        ]}
         active={tab}
         onChange={setTab}
       />
@@ -475,6 +483,8 @@ export function CaseScreen({
         <p>{item.claim}</p>
         <div className="case-metadata">
           <MetaCell label="CLAIM TYPE">{item.claimType}</MetaCell>
+          <MetaCell label="PLAINTIFF AGREEMENT ROLE">{item.plaintiffAgreementRole}</MetaCell>
+          <MetaCell label="DEFENDANT AGREEMENT ROLE">{item.defendantAgreementRole}</MetaCell>
           <MetaCell label="LINKED AGREEMENT">
             <Link to="/agreement/$id" params={{ id: String(Number(item.agreementId)) }}>
               Agreement #{item.agreementId} <ArrowUpRight size={13} />
@@ -496,15 +506,33 @@ export function CaseScreen({
       )}
       <div className="case-body">
         <div className="case-main">
-          <RecordSection number="01" title="THE CLAIM" aside="PLAINTIFF STATEMENT">
+          <RecordSection number="01" title="THE AGREEMENT" aside={item.agreementTitle}>
+            <h3>{item.agreementTitle}</h3>
+            <p className="record-lead">
+              {item.agreementTerms || "Agreement terms are unavailable in this record view."}
+            </p>
+          </RecordSection>
+          <RecordSection number="02" title="THE PARTIES" aside="AGREEMENT / COURT ROLES">
+            <div className="judgment-details">
+              <MetaCell label="CLIENT">{formatAddress(item.clientAddress)}</MetaCell>
+              <MetaCell label="PROVIDER">{formatAddress(item.providerAddress)}</MetaCell>
+              <MetaCell label="PLAINTIFF">
+                {item.plaintiff} · {item.plaintiffAgreementRole}
+              </MetaCell>
+              <MetaCell label="DEFENDANT">
+                {item.defendant} · {item.defendantAgreementRole}
+              </MetaCell>
+            </div>
+          </RecordSection>
+          <RecordSection number="03" title="THE CLAIM" aside="PLAINTIFF STATEMENT">
             <p className="record-lead">{item.claimBody}</p>
           </RecordSection>
-          <RecordSection number="02" title="THE DEFENCE" aside="DEFENDANT STATEMENT">
+          <RecordSection number="04" title="THE DEFENCE" aside="DEFENDANT STATEMENT">
             <p className="record-lead">{item.defence}</p>
           </RecordSection>
           <RecordSection
-            number="03"
-            title="THE EVIDENCE"
+            number="05"
+            title="PLAINTIFF / DEFENDANT EVIDENCE"
             aside={`${item.evidence.length.toString().padStart(2, "0")} ENTRIES`}
           >
             {evidenceState?.isLoading && item.evidence.length === 0 && (
@@ -554,7 +582,7 @@ export function CaseScreen({
             )}
           </RecordSection>
           <RecordSection
-            number="04"
+            number="06"
             title="JUDGMENT"
             aside={judged ? "ENTERED INTO RECORD" : "PENDING"}
           >
@@ -699,6 +727,7 @@ export function AgreementScreen({
               "—"
             )}
           </MetaCell>
+          <MetaCell label="ACCEPTANCE DEADLINE">{item.acceptDeadline}</MetaCell>
           <MetaCell label="ESCROW STATUS">{item.released}</MetaCell>
           <MetaCell label="CREATED">{item.date}</MetaCell>
         </aside>
@@ -780,7 +809,7 @@ export function CreateAgreementScreen() {
   );
   const creatorRegistered = myAgent.data?.registered === true;
   const providerRegistered = providerAgent.data?.registered === true;
-  const validEscrow = escrowWei !== undefined && escrowWei >= 0n;
+  const validEscrow = escrowWei !== undefined && escrowWei > 0n;
   const canReview = Boolean(
     address &&
     isCorrectNetwork &&
@@ -836,7 +865,7 @@ export function CreateAgreementScreen() {
       return;
     }
     if (!title.trim() || !terms.trim() || !validEscrow) {
-      setFormError("Complete every field with a valid provider and GEN amount.");
+      setFormError("Complete every field with a valid provider and a positive GEN amount.");
       setSubmitReady(false);
       return;
     }
@@ -889,7 +918,7 @@ export function CreateAgreementScreen() {
             value={escrow}
             onChange={setEscrow}
             placeholder="0.00"
-            error={review && !validEscrow ? "Enter a valid GEN amount." : undefined}
+            error={review && !validEscrow ? "Enter a positive GEN amount." : undefined}
           />
           <p className="form-footnote">
             Escrow is submitted as native GEN. Transaction Kit quotes protocol fees separately.

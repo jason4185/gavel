@@ -25,7 +25,7 @@ export function StatusLabel({ status }: { status: string }) {
         : status;
   return (
     <span
-      className={`status-label ${status === "JUDGED" || status === "EXECUTED" || status === "COMPLETED" || status === "CANCELLED" ? "status-solid" : ""}`}
+      className={`status-label ${status === "JUDGED" || status === "EXECUTED" || status === "COMPLETED" || status === "CANCELLED" || status === "EXPIRED" ? "status-solid" : ""}`}
     >
       <span className="status-dot" />
       {display}
@@ -147,11 +147,15 @@ export function EvidenceItem({ item }: { item: Evidence }) {
             {item.side} / {item.at}
           </span>
         </div>
-        <p>{item.body}</p>
+        <p>{item.description}</p>
         <div className="reference">
-          <span>REFERENCE URI</span>
+          <span>COMMITTED HTTPS URL</span>
           <code>{item.reference}</code>
           <ArrowUpRight size={14} />
+        </div>
+        <div className="reference">
+          <span>SHA-256 COMMITMENT</span>
+          <code>{item.sha256}</code>
         </div>
       </div>
     </article>

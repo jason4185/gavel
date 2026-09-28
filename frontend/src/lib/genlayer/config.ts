@@ -1,6 +1,7 @@
 import { studioDevnet } from "genlayer-js/chains";
 import type { Address } from "genlayer-js/types";
 
+const deployedContractAddress = "0xa6ACfbD7757512456a237EB516985b4f3ff74638";
 const expectedChainId = Number(import.meta.env["VITE_GENLAYER_CHAIN_ID"] || studioDevnet.id);
 const expectedRpc =
   import.meta.env["VITE_GENLAYER_RPC_URL"] || studioDevnet.rpcUrls.default.http[0];
@@ -17,13 +18,17 @@ if (expectedRpc !== studioDevnet.rpcUrls.default.http[0]) {
   );
 }
 
-const contractAddress = import.meta.env["VITE_GAVEL_CONTRACT_ADDRESS"];
+const configuredContractAddress =
+  import.meta.env["VITE_GAVEL_CONTRACT_ADDRESS"] || deployedContractAddress;
 
-if (!contractAddress || !/^0x[0-9a-fA-F]{40}$/.test(contractAddress)) {
+if (!/^0x[0-9a-fA-F]{40}$/.test(configuredContractAddress)) {
   throw new Error("VITE_GAVEL_CONTRACT_ADDRESS must be a valid EVM address");
 }
+if (configuredContractAddress.toLowerCase() !== deployedContractAddress.toLowerCase()) {
+  throw new Error(`GAVEL requires deployed contract ${deployedContractAddress}`);
+}
 
-export const GAVEL_CONTRACT_ADDRESS = contractAddress as Address;
+export const GAVEL_CONTRACT_ADDRESS = deployedContractAddress as Address;
 export const GAVEL_CHAIN = studioDevnet;
 export const GAVEL_CHAIN_ID = studioDevnet.id;
 export const GAVEL_CHAIN_ID_HEX = `0x${studioDevnet.id.toString(16)}`;

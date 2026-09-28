@@ -134,7 +134,13 @@ export function useCaseRecord(id: string) {
   const detail = query.data;
   const evidence = detail ? [...detail.plaintiff_evidence, ...detail.defendant_evidence] : [];
   const record = detail
-    ? toCaseRecord(detail.case, evidence, new Map(), formatGen(detail.agreement.escrow))
+    ? toCaseRecord(
+        detail.case,
+        evidence,
+        new Map(),
+        formatGen(detail.agreement.escrow),
+        detail.agreement,
+      )
     : undefined;
   return {
     ...query,

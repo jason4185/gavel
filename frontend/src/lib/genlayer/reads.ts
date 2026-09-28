@@ -49,6 +49,7 @@ function normalizeAgreement<T extends GavelAgreementRaw | GavelAgreementSummaryR
     id: asNumber(raw.id),
     case_id: asNumber(raw.case_id),
     created_at: asNumber(raw.created_at),
+    accept_deadline: asNumber(raw.accept_deadline),
     escrow: String(raw.escrow),
   } as T;
 }
@@ -80,6 +81,16 @@ function normalizeEvidence(raw: GavelEvidenceRaw): GavelEvidenceRaw {
   };
 }
 
+function agreementRole(
+  address: string,
+  agreement: GavelAgreementRaw | undefined,
+): "Client" | "Provider" | "Unknown" {
+  if (!agreement) return "Unknown";
+  if (address.toLowerCase() === agreement.creator.toLowerCase()) return "Client";
+  if (address.toLowerCase() === agreement.counterparty.toLowerCase()) return "Provider";
+  return "Unknown";
+}
+
 export function getConfig(): Promise<GavelConfig> {
   return contractRead<GavelConfig>("get_config");
 }
@@ -106,8 +117,38 @@ export async function getAgentsPage(cursor: number, limit: number): Promise<Gave
   };
 }
 
+export async function getAgentIds(
+  cursor: number,
+  limit: number,
+): Promise<{ ids: number[]; next_cursor: number; has_more: boolean }> {
+  const page = await contractRead<{ ids: number[]; next_cursor: number; has_more: boolean }>(
+    "get_agent_ids",
+    [BigInt(cursor), BigInt(limit)],
+  );
+  return {
+    ids: page.ids.map(asNumber),
+    next_cursor: asNumber(page.next_cursor),
+    has_more: Boolean(page.has_more),
+  };
+}
+
 export async function getAgreement(id: number): Promise<GavelAgreementRaw> {
   return normalizeAgreement(await contractRead<GavelAgreementRaw>("get_agreement", [BigInt(id)]));
+}
+
+export async function getAgreementIds(
+  cursor: number,
+  limit: number,
+): Promise<{ ids: number[]; next_cursor: number; has_more: boolean }> {
+  const page = await contractRead<{ ids: number[]; next_cursor: number; has_more: boolean }>(
+    "get_agreement_ids",
+    [BigInt(cursor), BigInt(limit)],
+  );
+  return {
+    ids: page.ids.map(asNumber),
+    next_cursor: asNumber(page.next_cursor),
+    has_more: Boolean(page.has_more),
+  };
 }
 
 export async function getAgreementsPage(
@@ -127,6 +168,21 @@ export async function getAgreementsPage(
 
 export async function getCase(id: number): Promise<GavelCaseRaw> {
   return normalizeCase(await contractRead<GavelCaseRaw>("get_case", [BigInt(id)]));
+}
+
+export async function getCaseIds(
+  cursor: number,
+  limit: number,
+): Promise<{ ids: number[]; next_cursor: number; has_more: boolean }> {
+  const page = await contractRead<{ ids: number[]; next_cursor: number; has_more: boolean }>(
+    "get_case_ids",
+    [BigInt(cursor), BigInt(limit)],
+  );
+  return {
+    ids: page.ids.map(asNumber),
+    next_cursor: asNumber(page.next_cursor),
+    has_more: Boolean(page.has_more),
+  };
 }
 
 export async function getCasesPage(cursor: number, limit: number): Promise<GavelCasePage> {
@@ -155,6 +211,27 @@ export async function getCaseDetail(id: number): Promise<GavelCaseDetailRaw> {
     plaintiff_evidence: detail.plaintiff_evidence.map(normalizeEvidence),
     defendant_evidence: detail.defendant_evidence.map(normalizeEvidence),
   };
+}
+
+export async function getEvidenceCount(
+  caseId: number,
+  side: GavelEvidenceRaw["side"],
+): Promise<number> {
+  return asNumber(await contractRead<number>("get_evidence_count", [BigInt(caseId), side]));
+}
+
+export async function getEvidenceItem(
+  caseId: number,
+  side: GavelEvidenceRaw["side"],
+  index: number,
+): Promise<GavelEvidenceRaw> {
+  return normalizeEvidence(
+    await contractRead<GavelEvidenceRaw>("get_evidence_item", [
+      BigInt(caseId),
+      side,
+      BigInt(index),
+    ]),
+  );
 }
 
 function agentKey(address: string): string {
@@ -202,6 +279,13 @@ function agreementHistory(raw: GavelAgreementRaw): TimelineEvent[] {
       label: "Agreement cancelled",
       date: "RECORDED",
       detail: "The court record shows escrow released by cancellation.",
+    });
+  }
+  if (raw.status === "EXPIRED") {
+    history.push({
+      label: "Agreement expired",
+      date: "RECORDED",
+      detail: "The acceptance window closed and escrow returned to the original client.",
     });
   }
   return history;
@@ -278,6 +362,8 @@ export function toAgreementRecord(
     status: raw.status,
     accepted: raw.accepted,
     ...(raw.case_id ? { caseId: String(raw.case_id).padStart(3, "0") } : {}),
+    acceptDeadline: formatDeadline(raw.accept_deadline),
+    acceptDeadlineAt: raw.accept_deadline,
     date: formatTimestamp(raw.created_at),
     terms: raw.terms ?? "",
     released: raw.escrow_released ? "Released" : "Held",
@@ -291,8 +377,9 @@ export function toEvidenceRecord(raw: GavelEvidenceRaw): Evidence {
     type: formatProtocolLabel(raw.evidence_type),
     side: raw.side === "PLAINTIFF" ? "Plaintiff" : "Defendant",
     at: formatTimestamp(raw.submitted_at),
-    body: raw.content,
-    reference: raw.uri || "—",
+    description: raw.description,
+    reference: raw.evidence_url,
+    sha256: raw.evidence_sha256,
   };
 }
 
@@ -301,6 +388,7 @@ export function toCaseRecord(
   evidence: GavelEvidenceRaw[],
   agents: Map<string, GavelAgentRaw> = new Map(),
   escrow = "",
+  agreement?: GavelAgreementRaw,
 ): CourtCase {
   const plaintiff = agentLabel(raw.plaintiff, agents);
   const defendant = agentLabel(raw.defendant, agents);
@@ -323,6 +411,12 @@ export function toCaseRecord(
     evidenceDeadline: formatDeadline(raw.evidence_deadline),
     responseDeadlineAt: raw.response_deadline,
     evidenceDeadlineAt: raw.evidence_deadline,
+    agreementTitle: agreement?.title ?? `Agreement #${raw.agreement_id}`,
+    agreementTerms: agreement?.terms ?? "",
+    clientAddress: agreement?.creator ?? "",
+    providerAddress: agreement?.counterparty ?? "",
+    plaintiffAgreementRole: agreementRole(raw.plaintiff, agreement),
+    defendantAgreementRole: agreementRole(raw.defendant, agreement),
     claimBody: raw.claim,
     defence: raw.defence || "No defence has been submitted.",
     hasDefence: raw.has_defence,

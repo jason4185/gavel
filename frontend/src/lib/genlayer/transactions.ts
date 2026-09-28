@@ -17,6 +17,9 @@ export const createAgreement = (counterparty: string, title: string, terms: stri
 export const acceptAgreement = (agreementId: number) =>
   write("accept_agreement", [BigInt(agreementId)]);
 
+export const expireAgreement = (agreementId: number) =>
+  write("expire_agreement", [BigInt(agreementId)]);
+
 export const cancelAgreement = (agreementId: number) =>
   write("cancel_agreement", [BigInt(agreementId)]);
 
@@ -32,9 +35,17 @@ export const submitDefence = (caseId: number, defence: string) =>
 export const submitEvidence = (
   caseId: number,
   evidenceType: string,
-  content: string,
-  uri: string,
-) => write("submit_evidence", [BigInt(caseId), evidenceType, content, uri]);
+  description: string,
+  evidenceUrl: string,
+  evidenceSha256: string,
+) =>
+  write("submit_evidence", [
+    BigInt(caseId),
+    evidenceType,
+    description,
+    evidenceUrl,
+    evidenceSha256,
+  ]);
 
 export const markReadyForJudgment = (caseId: number) =>
   write("mark_ready_for_judgment", [BigInt(caseId)]);
